@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import random
+import psycopg2
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
@@ -30,6 +33,102 @@ def conectar_engine():
     return create_engine(
         f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
     )
+
+# ─────────────────────────────────────────
+# Carga incremental automática
+# ─────────────────────────────────────────
+TIPO_TRANSAC   = ["venta", "reposicion", "devolucion", "traslado"]
+TEMPORADA_ALTA = [1, 2, 6, 7, 10, 11, 12]
+
+def verificar_y_cargar():
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            dbname=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            port=os.getenv("DB_PORT", "5432"),
+            sslmode="require"
+        )
+        cursor = conn.cursor()
+
+        # Verificar si ya hay data del día actual
+        hoy = datetime.now().date()
+        cursor.execute("""
+            SELECT COUNT(*) FROM transacciones
+            WHERE DATE(transaction_date) = %s
+        """, (hoy,))
+        registros_hoy = cursor.fetchone()[0]
+
+        if registros_hoy > 0:
+            cursor.close()
+            conn.close()
+            return False, registros_hoy, hoy
+
+        # No hay data de hoy → ejecutar carga incremental
+        cursor.execute("SELECT MAX(transaction_date) FROM transacciones")
+        ultima = cursor.fetchone()[0]
+        if ultima is None:
+            ultima = datetime.now() - timedelta(days=3)
+
+        cursor.execute("SELECT id FROM tiendas")
+        tiendas = [str(r[0]) for r in cursor.fetchall()]
+
+        cursor.execute("SELECT id FROM catalogos")
+        skus = [str(r[0]) for r in cursor.fetchall()]
+
+        fecha    = ultima + timedelta(days=1)
+        hasta    = datetime.now()
+        total    = 0
+
+        while fecha <= hasta:
+            mes        = fecha.month
+            ventas_dia = random.randint(15, 30) if mes in TEMPORADA_ALTA else random.randint(5, 15)
+            for _ in range(ventas_dia):
+                tipo     = random.choices(TIPO_TRANSAC, weights=[70, 15, 10, 5])[0]
+                cantidad = random.randint(1, 5) if tipo == "venta" else random.randint(5, 30)
+                cursor.execute("""
+                    INSERT INTO transacciones (
+                        receipt_id, sku_id, source_location_id, target_location_id,
+                        quantity, sale_price, currency, type,
+                        transaction_date, transaction_date_process
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    f"AUTO_{total:08d}",
+                    random.choice(skus),
+                    "BODEGA_CENTRAL",
+                    random.choice(tiendas),
+                    cantidad,
+                    round(random.uniform(30000, 350000), 2) if tipo == "venta" else 0,
+                    "COP", tipo, fecha, datetime.now()
+                ))
+                total += 1
+            fecha += timedelta(days=1)
+
+        # Registrar log
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS log_cargas (
+                id SERIAL PRIMARY KEY,
+                fecha_ejecucion TIMESTAMP DEFAULT NOW(),
+                fecha_desde TIMESTAMP,
+                fecha_hasta TIMESTAMP,
+                transacciones INTEGER,
+                estado VARCHAR(50)
+            )
+        """)
+        cursor.execute("""
+            INSERT INTO log_cargas (fecha_desde, fecha_hasta, transacciones, estado)
+            VALUES (%s, %s, %s, %s)
+        """, (ultima, hasta, total, "exitoso"))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True, total, hoy
+
+    except Exception as e:
+        st.warning(f"⚠️ Carga incremental: {e}")
+        return False, 0, datetime.now().date()
 
 @st.cache_data(ttl=3600)
 def cargar_datos():
@@ -83,6 +182,18 @@ except Exception as e:
 # Header
 # ─────────────────────────────────────────
 st.title("📦 Go Retail — Tablero de Abastecimiento")
+
+# ─────────────────────────────────────────
+# Validación y carga incremental automática
+# ─────────────────────────────────────────
+with st.spinner("Verificando data del día..."):
+    cargado, total_nuevos, fecha_hoy = verificar_y_cargar()
+
+if cargado:
+    st.success(f"✅ Carga incremental ejecutada · {total_nuevos:,} transacciones nuevas agregadas · {fecha_hoy.strftime('%Y-%m-%d')}")
+else:
+    st.info(f"ℹ️ Data del día ya está cargada · {fecha_hoy.strftime('%Y-%m-%d')} · {total_nuevos:,} registros existentes")
+
 st.caption("Actualizado 2 veces por semana · Go_BD en Neon PostgreSQL")
 st.divider()
 
