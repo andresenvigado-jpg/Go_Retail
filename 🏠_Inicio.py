@@ -18,7 +18,6 @@ st.set_page_config(
     layout="wide"
 )
 st.markdown(STYLE, unsafe_allow_html=True)
-
 load_dotenv()
 
 TIPO_TRANSAC   = ["venta", "reposicion", "devolucion", "traslado"]
@@ -107,19 +106,33 @@ else:
 
 engine = conectar_engine()
 
-# ── KPIs principales ──
-st.markdown(section("Resumen Ejecutivo"), unsafe_allow_html=True)
+# ── Cargar todas las tablas necesarias ──
+df_anomalias   = pd.DataFrame()
+df_seg_skus    = pd.DataFrame()
+df_seg_tiendas = pd.DataFrame()
+df_eoq         = pd.DataFrame()
 
 try:
     df_anomalias   = pd.read_sql("SELECT * FROM anomalias_inventario", engine)
+except Exception: pass
+try:
     df_seg_skus    = pd.read_sql("SELECT * FROM segmentacion_skus", engine)
+except Exception: pass
+try:
     df_seg_tiendas = pd.read_sql("SELECT * FROM segmentacion_tiendas", engine)
-    df_eoq         = pd.read_sql("SELECT * FROM eoq_resultados", engine)
+except Exception: pass
+try:
+    df_eoq         = pd.read_sql("SELECT * FROM eoq_resultados ORDER BY eoq DESC", engine)
+except Exception: pass
 
-    quiebres     = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🔴 Quiebre de stock"])
-    riesgos      = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🟠 Riesgo de quiebre"])
-    sin_mov      = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🔵 Sin movimiento"])
-    pedir_ahora  = len(df_eoq[df_eoq["estado_reposicion"] == "🔴 Pedir ahora"])
+# ── KPIs principales ──
+st.markdown(section("Resumen Ejecutivo"), unsafe_allow_html=True)
+
+if not df_anomalias.empty and not df_seg_skus.empty and not df_eoq.empty:
+    quiebres    = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🔴 Quiebre de stock"])
+    riesgos     = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🟠 Riesgo de quiebre"])
+    sin_mov     = len(df_anomalias[df_anomalias["tipo_anomalia"] == "🔵 Sin movimiento"])
+    pedir_ahora = len(df_eoq[df_eoq["estado_reposicion"] == "🔴 Pedir ahora"])
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: st.markdown(kpi("Total SKUs",        len(df_seg_skus),    "success"), unsafe_allow_html=True)
@@ -128,13 +141,11 @@ try:
     with c4: st.markdown(kpi("Riesgo quiebre",    riesgos,             "warning", "Acción urgente"),   unsafe_allow_html=True)
     with c5: st.markdown(kpi("Sin movimiento",    sin_mov,             "neutral", "Revisar viabilidad"), unsafe_allow_html=True)
     with c6: st.markdown(kpi("Pedir ahora (EOQ)", pedir_ahora,         "danger",  "Pedido inmediato"), unsafe_allow_html=True)
-
-except Exception as e:
-    st.warning(f"Ejecuta los modelos para ver los KPIs: {e}")
+else:
+    st.warning("Ejecuta los modelos para ver los KPIs.")
 
 # ── Ventas históricas ──
 st.markdown(section("Evolución de Ventas Históricas"), unsafe_allow_html=True)
-
 try:
     df_ventas = pd.read_sql("""
         SELECT DATE(transaction_date) AS fecha, SUM(quantity) AS cantidad
@@ -142,7 +153,6 @@ try:
         GROUP BY DATE(transaction_date) ORDER BY fecha
     """, engine)
     df_ventas["fecha"] = pd.to_datetime(df_ventas["fecha"])
-
     fig = px.area(df_ventas, x="fecha", y="cantidad",
                   color_discrete_sequence=[COLORS["primary"]],
                   labels={"fecha": "Fecha", "cantidad": "Unidades vendidas"})
@@ -155,9 +165,8 @@ except Exception:
 # ── Resumen de alertas ──
 st.markdown(section("Resumen de Alertas"), unsafe_allow_html=True)
 
-try:
+if not df_anomalias.empty and not df_seg_skus.empty:
     col1, col2 = st.columns(2)
-
     with col1:
         resumen_anom = (
             df_anomalias[df_anomalias["es_anomalia"]]
@@ -182,7 +191,7 @@ try:
                          hole=0.5, title="Segmentación ABC de SKUs")
         fig_abc.update_layout(**PLOTLY_TEMPLATE, margin=dict(l=0, r=0, t=40, b=0), height=280)
         st.plotly_chart(fig_abc, use_container_width=True)
-except Exception:
+else:
     st.info("Ejecuta los modelos para ver las alertas.")
 
 # ── Footer ──

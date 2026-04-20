@@ -24,7 +24,6 @@ def conectar_engine():
 st.markdown(header("📦 Gestión de Inventario", "Anomalías · EOQ · Simulación Monte Carlo"), unsafe_allow_html=True)
 engine = conectar_engine()
 
-# ── Tabs ──
 tab1, tab2, tab3 = st.tabs(["🚨 Anomalías", "🛒 EOQ — Pedido Óptimo", "🎲 Monte Carlo — Riesgo"])
 
 # ── Tab 1: Anomalías ──
@@ -32,17 +31,16 @@ with tab1:
     st.markdown(section("Detección de Anomalías — Isolation Forest"), unsafe_allow_html=True)
     try:
         df_an = pd.read_sql("SELECT * FROM anomalias_inventario", engine)
-
-        quiebres = len(df_an[df_an["tipo_anomalia"] == "🔴 Quiebre de stock"])
-        riesgos  = len(df_an[df_an["tipo_anomalia"] == "🟠 Riesgo de quiebre"])
+        quiebres   = len(df_an[df_an["tipo_anomalia"] == "🔴 Quiebre de stock"])
+        riesgos    = len(df_an[df_an["tipo_anomalia"] == "🟠 Riesgo de quiebre"])
         sobrestock = len(df_an[df_an["tipo_anomalia"] == "🟡 Sobrestock"])
-        sin_mov  = len(df_an[df_an["tipo_anomalia"] == "🔵 Sin movimiento"])
+        sin_mov    = len(df_an[df_an["tipo_anomalia"] == "🔵 Sin movimiento"])
 
         c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(kpi("Quiebres de stock",  quiebres,   "danger",  "Acción inmediata"), unsafe_allow_html=True)
-        with c2: st.markdown(kpi("Riesgo de quiebre",  riesgos,    "warning", "Acción urgente"),   unsafe_allow_html=True)
-        with c3: st.markdown(kpi("Sobrestock",         sobrestock, "info",    "Revisar pedidos"),  unsafe_allow_html=True)
-        with c4: st.markdown(kpi("Sin movimiento",     sin_mov,    "neutral", "Evaluar discontinuar"), unsafe_allow_html=True)
+        with c1: st.markdown(kpi("Quiebres de stock", quiebres,   "danger",  "Acción inmediata"),       unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Riesgo de quiebre", riesgos,    "warning", "Acción urgente"),          unsafe_allow_html=True)
+        with c3: st.markdown(kpi("Sobrestock",         sobrestock, "info",    "Revisar pedidos"),         unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Sin movimiento",     sin_mov,    "neutral", "Evaluar discontinuar"),    unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -59,8 +57,7 @@ with tab1:
             df_show = df_fil[["tienda_id","sku_id","site_qty","min_stock","cobertura_dias","tipo_anomalia"]].copy()
             df_show.columns = ["Tienda","SKU","Stock","Mínimo","Cobertura días","Tipo"]
             df_show["Cobertura días"] = df_show["Cobertura días"].round(1)
-            st.dataframe(df_show.sort_values("Stock").head(20), use_container_width=True,
-                         hide_index=True, height=300)
+            st.dataframe(df_show.sort_values("Stock").head(20), use_container_width=True, hide_index=True, height=300)
     except Exception:
         st.info("ℹ️ Ejecuta modelo_anomalias.py para ver las anomalías.")
 
@@ -68,7 +65,7 @@ with tab1:
 with tab2:
     st.markdown(section("EOQ — Cantidad Óptima de Pedido"), unsafe_allow_html=True)
     try:
-        df_eoq = pd.read_sql("SELECT * FROM eoq_resultados ORDER BY indice_rentabilidad DESC", engine)
+        df_eoq = pd.read_sql("SELECT * FROM eoq_resultados ORDER BY eoq DESC", engine)
 
         pedir_ahora  = len(df_eoq[df_eoq["estado_reposicion"] == "🔴 Pedir ahora"])
         pedir_pronto = len(df_eoq[df_eoq["estado_reposicion"] == "🟡 Pedir pronto"])
@@ -76,10 +73,10 @@ with tab2:
         costo_total  = df_eoq["costo_total_optimizado"].sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(kpi("Pedir ahora",   pedir_ahora,               "danger",  "Urgente"),  unsafe_allow_html=True)
-        with c2: st.markdown(kpi("Pedir pronto",  pedir_pronto,              "warning", "Próximo"),  unsafe_allow_html=True)
-        with c3: st.markdown(kpi("Stock OK",       stock_ok,                  "success", "Estable"),  unsafe_allow_html=True)
-        with c4: st.markdown(kpi("Costo optimizado", f"${costo_total:,.0f}", "info",    "COP total"), unsafe_allow_html=True)
+        with c1: st.markdown(kpi("Pedir ahora",      pedir_ahora,               "danger",  "Urgente"),   unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Pedir pronto",     pedir_pronto,              "warning", "Próximo"),   unsafe_allow_html=True)
+        with c3: st.markdown(kpi("Stock OK",          stock_ok,                  "success", "Estable"),   unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Costo optimizado", f"${costo_total:,.0f}",    "info",    "COP total"), unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -115,10 +112,10 @@ with tab3:
         prob_prom    = df_mc["prob_quiebre"].mean()
 
         c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(kpi("Riesgo alto",  riesgo_alto,          "danger",  "≥70% prob. quiebre"),  unsafe_allow_html=True)
-        with c2: st.markdown(kpi("Riesgo medio", riesgo_medio,         "warning", "40-70% prob. quiebre"), unsafe_allow_html=True)
-        with c3: st.markdown(kpi("Riesgo bajo",  riesgo_bajo,          "success", "<15% prob. quiebre"),  unsafe_allow_html=True)
-        with c4: st.markdown(kpi("Prob. promedio", f"{prob_prom:.1f}%","info",    "Todos los SKUs"),       unsafe_allow_html=True)
+        with c1: st.markdown(kpi("Riesgo alto",     riesgo_alto,          "danger",  "≥70% prob. quiebre"),  unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Riesgo medio",    riesgo_medio,         "warning", "40-70% prob. quiebre"), unsafe_allow_html=True)
+        with c3: st.markdown(kpi("Riesgo bajo",     riesgo_bajo,          "success", "<15% prob. quiebre"),  unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Prob. promedio",  f"{prob_prom:.1f}%",  "info",    "Todos los SKUs"),       unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
